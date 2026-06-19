@@ -1,32 +1,69 @@
 import time
-from datetime import datetime
-
-# 선사 prefix 맵
-CARRIER_MAP = {
-    "HMCU": "HMM",
-    "MAEU": "MAERSK",
-    "ONEY": "ONE",
-    "COSU": "COSCO",
-    "EMCU": "EMC",
-    "OOLU": "OOCL",
-    "HLCU": "HAPAG"
-}
-
-# Mock 데이터 구조 (추후 실제 API 연동 시 이 데이터 포맷 그대로 결과만 치환)
-TRACKING_SAMPLE = {
-    "HMM": {"status": "On Board", "eta": "2026-07-10", "pol": "JAKARTA", "pod": "ROTTERDAM", "vessel": "HMM RAON"},
-    "MAERSK": {"status": "Delay", "eta": "2026-07-15", "pol": "SHANGHAI", "pod": "HAMBURG", "vessel": "MAERSK MC-KINNEY"},
-    "ONE": {"status": "On Schedule", "eta": "2026-07-22", "pol": "BUSAN", "pod": "GENOVA", "vessel": "ONE OLYMPUS"},
-    "UNKNOWN": {"status": "Failed", "eta": "N/A", "pol": "N/A", "pod": "N/A", "vessel": "N/A"}
-}
 
 def detect_carrier(bl_number):
-    """B/L 번호 prefix로 선사 자동 인식"""
-    prefix = str(bl_number).strip().upper()[:4]
-    return CARRIER_MAP.get(prefix, "UNKNOWN")
+    """
+    B/L 번호의 앞자리 프리픽스를 분석하여 선사를 자동으로 인식합니다.
+    """
+    if not bl_number or len(str(bl_number)) < 4:
+        return "UNKNOWN"
+        
+    prefix = str(bl_number)[:4].upper()
+    
+    carrier_map = {
+        "HMCU": "HMM",
+        "MAEU": "MAERSK",
+        "ONEY": "ONE",
+        "OOLU": "OOCL",
+        "COSU": "COSCO",
+        "EMCU": "EVERGREEN"
+    }
+    
+    return carrier_map.get(prefix, "UNKNOWN")
 
-# GPT Pick: 추후 실제 API 연동을 위해 bl_number 인자를 미리 설계에 반영
-def fetch_tracking_data(bl_number, carrier):
-    """현재는 Mock 데이터를 반환, 추후 실제 API 호출 코드로 이 내부만 교체"""
-    time.sleep(0.3)  # 실제 API 조회 UX 체감을 위한 딜레이
-    return TRACKING_SAMPLE.get(carrier, TRACKING_SAMPLE["UNKNOWN"])
+def track_bulk_bl(bl_list):
+    """
+    대량의 B/L 리스트를 받아 트래킹 결과를 반환합니다. (v1.4 - ETD 반영 및 가짜 데이터 보강)
+    """
+    results = []
+    total_count = len(bl_list)
+    
+    for i, bl in enumerate(bl_list):
+        carrier = detect_carrier(bl)
+        
+        # 선사별로 실무에 가깝게 가짜 스케줄 데이터 매핑 (ETD 추가)
+        if carrier == "HMM":
+            status = "On Board"
+            pol = "BUSAN (KRPUS)"
+            etd = "2026-06-12"
+            pod = "HAMBURG (DEHAM)"
+            eta = "2026-07-18"
+        elif carrier == "MAERSK":
+            status = "Delay"
+            pol = "SHANGHAI (CNSHA)"
+            etd = "2026-06-05"
+            pod = "ROTTERDAM (NLRTM)"
+            eta = "2026-07-20"
+        elif carrier == "ONE":
+            status = "On Schedule"
+            pol = "SINGAPORE (SGSIN)"
+            etd = "2026-06-10"
+            pod = "ROTTERDAM (NLRTM)"
+            eta = "2026-07-12"
+        else:
+            status = "Failed"
+            pol = "UNKNOWN"
+            etd = "N/A"
+            pod = "UNKNOWN"
+            eta = "N/A"
+            
+        results.append({
+            "B/L Number": bl,
+            "Carrier": carrier,
+            "Status": status,
+            "POL": pol,
+            "ETD": etd,      # 👈 형님이 말씀하신 ETD 추가!
+            "POD": pod,
+            "ETA": eta
+        })
+        
+    return results
