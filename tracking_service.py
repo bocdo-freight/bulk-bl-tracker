@@ -1,6 +1,5 @@
 import time
 import logging
-import os
 from config import CARRIER_MAP, API_TIMEOUT, MAX_RETRIES
 from provider import get_provider
 
@@ -12,7 +11,7 @@ def detect_carrier(bl_number):
 
 def track_bulk_bl(bl_list, progress_callback=None):
     results = []
-    provider = get_provider() 
+    provider = get_provider()
     total_bl = len(bl_list)
     
     for index, bl in enumerate(bl_list):
@@ -22,8 +21,8 @@ def track_bulk_bl(bl_list, progress_callback=None):
         if progress_callback:
             progress_callback(index + 1, total_bl)
             
-        # ⚠️ 핵심 방어: 1건 조회 후 2초간 강제 대기 (429 에러 차단)
-        time.sleep(2.0) 
+        # ⚠️ 조회 간격 2.5초로 여유 확보 (API 429 에러 완벽 차단)
+        time.sleep(2.5) 
             
         if carrier_code == "UNKNOWN":
             results.append({"B/L Number": bl, "Carrier": "UNKNOWN", "Status": "Failed", "Remarks": "Carrier mapping missing"})
@@ -37,8 +36,8 @@ def track_bulk_bl(bl_list, progress_callback=None):
                 result_object = provider.fetch_data(tracking_request, timeout=API_TIMEOUT)
                 if result_object and result_object.status != "Error":
                     break
-            except:
-                time.sleep(3.0) # 재시도 시 더 긴 대기
+            except Exception as e:
+                time.sleep(5.0) # 재시도 시 대기시간 연장
                     
         if result_object:
             results.append({
