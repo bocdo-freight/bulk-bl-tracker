@@ -1,6 +1,6 @@
 import os
 
-# TrackingMore API 표준 Courier Code (최신 버전)
+# 선사 코드 매핑 (TrackingMore 공식 표준)
 CARRIER_MAP = {
     "ONEY": "one-line",
     "HMCU": "hmm",
@@ -17,9 +17,6 @@ CARRIER_MAP = {
     "YMLU": "yangming",
     "WHLC": "wanhai"
 }
-
-API_TIMEOUT = 20.0
-MAX_RETRIES = 3
 
 def get_trackingmore_key():
     return os.getenv("TRACKINGMORE_API_KEY", "")
