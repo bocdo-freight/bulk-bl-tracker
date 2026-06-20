@@ -1,5 +1,6 @@
 from dataclasses import dataclass
-from abc import ABC, abstractmethod  # 👈 챗GPT 1위 피드백: 추상 클래스 도구 소환
+from abc import ABC, abstractmethod
+import requests  # 👈 드디어 진짜 인터넷 통신 모듈 등장!
 from config import get_trackingmore_key, ACTIVE_PROVIDER
 
 @dataclass
@@ -12,32 +13,25 @@ class TrackingResult:
     vessel: str
     remarks: str
 
-class BaseProvider(ABC):  # 👈 챗GPT 1위 피드백: 추상 클래스로 격상
-    """
-    SaaS 아키텍처의 핵심 뼈대인 인터페이스 계약서.
-    이 규격을 따르지 않는 자식 공급자는 태어날 수 없습니다.
-    """
+class BaseProvider(ABC):
     @abstractmethod
     def fetch_data(self, tracking_request, timeout=5.0) -> TrackingResult:
         pass
 
 class TrackingMoreProvider(BaseProvider):
     """
-    TrackingMore API 공급자 실구현체 (v1.95 - 추상화 및 보안 검증 강화)
+    TrackingMore 진짜 실시간 API 공급자 (Phase 2 가동)
     """
     def __init__(self):
         self.base_url = "https://api.trackingmore.com/v4/trackings"
-        # 챗GPT 3위 피드백용 주석 유지 (실제 연동 시 아래 주석 해제)
-        # import requests
-        # self.session = requests.Session()
+        self.session = requests.Session()  # 고속 대량 처리를 위한 세션 활성화
 
     def fetch_data(self, tracking_request, timeout=5.0) -> TrackingResult:
         api_key = get_trackingmore_key()
         
-        # ❌ 챗GPT 2위 피드백 반영: 키 설정 안 된 채로 가동 시 즉시 폭발하는 안전핀 장착
         if api_key == "MOCK_KEY_FOR_NOW":
             raise RuntimeError(
-                "Critical Configuration Error: TrackingMore API key is not configured in Streamlit Secrets."
+                "🚨 Streamlit Secrets에 TrackingMore API 키가 세팅되지 않았습니다!"
             )
             
         bl_number = tracking_request["bl_number"]
@@ -49,43 +43,83 @@ class TrackingMoreProvider(BaseProvider):
                 remarks="Carrier not supported. Please verify B/L number."
             )
             
-        # [Phase 2 실제 연동 시 주석 해제 구역]
-        # headers = {"Tracking-Api-Key": api_key, "Content-Type": "application/json"}
-        # response = self.session.get(f"{self.base_url}/...", headers=headers, timeout=timeout)
-        # return self._normalize_response(bl_number, carrier_code, response.json())
+        headers = {
+            "Tracking-Api-Key": api_key, 
+            "Content-Type": "application/json"
+        }
         
-        return TrackingResult(
-            status="In Transit",
-            pol="SHANGHAI (CNSHA)",
-            etd="2026-06-18",
-            pod="ROTTERDAM (NLRTM)",
-            eta="2026-07-22",
-            vessel="COSCO SHIPPING GEMINI",
-            remarks="Successfully fetched via API"
-        )
+        payload = {
+            "tracking_number": bl_number, 
+            "courier_code": carrier_code
+        }
+        
+        try:
+            # 1. Create API 호출 (TrackingMore는 최초 생성 시 실시간 데이터를 동시 반환합니다)
+            response = self.session.post(
+                f"{self.base_url}/create", 
+                json=payload, 
+                headers=headers, 
+                timeout=timeout
+            )
+            raw_json = response.json()
+            
+            # 2. 만약 "이미 등록된 B/L" 에러(4006)가 발생하면, GET API로 안전하게 재조회
+            if raw_json.get("meta", {}).get("code") == 4006:
+                get_url = f"{self.base_url}/get?tracking_numbers={bl_number}&courier_code={carrier_code}"
+                response = self.session.get(get_url, headers=headers, timeout=timeout)
+                raw_json = response.json()
+                
+            return self._normalize_response(bl_number, carrier_code, raw_json)
+            
+        except Exception as e:
+            return TrackingResult(
+                status="Error", pol="N/A", etd="N/A", pod="N/A", eta="N/A", vessel="N/A",
+                remarks=f"Network/Request Failed: {str(e)}"
+            )
 
     def _normalize_response(self, bl_number, carrier_code, raw_json) -> TrackingResult:
         try:
-            data = raw_json.get("data", [{}])[0]
+            meta_code = raw_json.get("meta", {}).get("code")
+            if meta_code != 200:
+                error_msg = raw_json.get("meta", {}).get("message", "Unknown API Error")
+                return TrackingResult(
+                    status="Error", pol="N/A", etd="N/A", pod="N/A", eta="N/A", vessel="N/A",
+                    remarks=f"API Error ({meta_code}): {error_msg}"
+                )
+
+            data = raw_json.get("data")
+            # GET 요청 응답은 list, POST 응답은 dict일 수 있으므로 구조 방어
+            if isinstance(data, list):
+                data = data[0] if len(data) > 0 else {}
+                
+            if not data:
+                return TrackingResult(
+                    status="Not Found", pol="N/A", etd="N/A", pod="N/A", eta="N/A", vessel="N/A",
+                    remarks="No tracking data returned from Carrier."
+                )
+
+            # 🚀 진짜 실시간 데이터 추출 구역!
+            status = data.get("delivery_status", "Unknown")
+            pol = data.get("origin_country", "N/A")
+            pod = data.get("destination_country", "N/A")
+            eta = data.get("scheduled_delivery_date", "N/A")
+            
             return TrackingResult(
-                status=data.get("delivery_status", "Unknown"),
-                pol=data.get("origin_country", "Unknown"),
-                etd="2026-06-18", 
-                pod=data.get("destination_country", "Unknown"),
-                eta=data.get("scheduled_delivery_date", "Unknown"),
-                vessel="Unknown",
-                remarks="Successfully parsed"
+                status=status.upper(),
+                pol=pol,
+                etd="N/A",  # 해상 특화 필드는 추후 상세 API 문서를 보며 고도화
+                pod=pod,
+                eta=eta if eta else "N/A",
+                vessel="N/A",
+                remarks="🚀 Real-time Live Fetched!"
             )
         except Exception as e:
             return TrackingResult(
                 status="Error", pol="N/A", etd="N/A", pod="N/A", eta="N/A", vessel="N/A",
-                remarks=f"API Response parsing error: {str(e)}"
+                remarks=f"Parsing error: {str(e)}"
             )
 
 class VizionProvider(BaseProvider):
-    """
-    BaseProvider 규격을 명확하게 상속받아 확장 준비 완료
-    """
     def fetch_data(self, tracking_request, timeout=5.0) -> TrackingResult:
         pass
 
