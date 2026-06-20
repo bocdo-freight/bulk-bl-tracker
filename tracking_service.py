@@ -1,7 +1,7 @@
 import time
 import logging
 import os
-from logging.handlers import RotatingFileHandler  # 👈 챗GPT 4위 피드백 반영
+from logging.handlers import RotatingFileHandler
 from config import CARRIER_MAP, API_TIMEOUT, MAX_RETRIES
 from provider import get_provider, TrackingResult
 
@@ -12,11 +12,10 @@ if not logger.handlers:
     os.makedirs("logs", exist_ok=True)
     formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
     
-    # ❌ 챗GPT 4위 피드백 적극 반영: 10MB 단위로 로그 파일을 자동 분할 관리하는 고급 로깅 기법 탑재
     file_handler = RotatingFileHandler(
         "logs/tracking.log", 
-        maxBytes=10 * 1024 * 1024,  # 10MB
-        backupCount=5,               # 최대 5개까지 백업 로테이션 (.log.1, .log.2 ...)
+        maxBytes=10 * 1024 * 1024,
+        backupCount=5,
         encoding="utf-8"
     )
     file_handler.setFormatter(formatter)
@@ -32,6 +31,7 @@ def detect_carrier(bl_number):
     prefix = str(bl_number)[:4].upper()
     return CARRIER_MAP.get(prefix, "UNKNOWN")
 
+# 🚨 에러의 원인이었던 progress_callback을 완벽하게 수신하는 부분!
 def track_bulk_bl(bl_list, progress_callback=None):
     results = []
     provider = get_provider() 
@@ -40,6 +40,7 @@ def track_bulk_bl(bl_list, progress_callback=None):
     for index, bl in enumerate(bl_list):
         carrier_code = detect_carrier(bl)
         
+        # UI로 진행률(%)을 쏴주는 역할
         if progress_callback:
             progress_callback(index + 1, total_bl)
             
