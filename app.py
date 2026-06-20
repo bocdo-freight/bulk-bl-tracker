@@ -4,15 +4,12 @@ import io
 import os
 import logging
 
-# 챗GPT 피드백 버그 5위 해결: 프로그램의 최상단 루트(app.py)에서 로그 마스터 설정 수행
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
-# 챗GPT 피드백 버그 2위 완벽 해결: 
-# config가 읽히기 전에 시스템 환경변수에 최우선 주입하여 동기화 꼬임을 원천 차단합니다.
 if "TRACKINGMORE_API_KEY" in st.secrets:
     os.environ["TRACKINGMORE_API_KEY"] = st.secrets["TRACKINGMORE_API_KEY"]
 
@@ -20,11 +17,11 @@ from tracking_service import track_bulk_bl
 
 st.set_page_config(page_title="Bulk B/L Tracker", layout="wide")
 
-st.title("🚢 Bulk B/L Tracking Tool (v1.8 - Enterprise Final)")
+st.title("🚢 Bulk B/L Tracking Tool (v1.95 - Complete Master)")
 st.markdown("Track up to 100 B/L numbers in one upload.")
 
 st.subheader("1. Download Template")
-sample_df = pd.DataFrame({"B_L_NUMBER": ["ONEYSUBG12277500", "HMCU1234567", "MAEU7654321", "INVALID123"]})
+sample_df = pd.DataFrame({"B_L_NUMBER": ["ONEYSUBG12277500", "HMCU1234567", "MAEU7654321", "MSCU9876543"]})
 
 buffer = io.BytesIO()
 with pd.ExcelWriter(buffer, engine='openpyxl') as writer:

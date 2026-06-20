@@ -1,10 +1,30 @@
 import time
 import logging
+import os
+from logging.handlers import RotatingFileHandler  # 👈 챗GPT 4위 피드백 반영
 from config import CARRIER_MAP, API_TIMEOUT, MAX_RETRIES
-from provider import get_provider
+from provider import get_provider, TrackingResult
 
-# 챗GPT 피드백 버그 5위 해결: 모듈 전용 독립 로거 선언 (운영 표준 구조)
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+if not logger.handlers:
+    os.makedirs("logs", exist_ok=True)
+    formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+    
+    # ❌ 챗GPT 4위 피드백 적극 반영: 10MB 단위로 로그 파일을 자동 분할 관리하는 고급 로깅 기법 탑재
+    file_handler = RotatingFileHandler(
+        "logs/tracking.log", 
+        maxBytes=10 * 1024 * 1024,  # 10MB
+        backupCount=5,               # 최대 5개까지 백업 로테이션 (.log.1, .log.2 ...)
+        encoding="utf-8"
+    )
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+    
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
 
 def detect_carrier(bl_number):
     if not bl_number or len(str(bl_number)) < 4:
@@ -14,8 +34,7 @@ def detect_carrier(bl_number):
 
 def track_bulk_bl(bl_list, progress_callback=None):
     results = []
-    # 팩토리 함수 인터페이스 확장 반영
-    provider = get_provider("trackingmore")
+    provider = get_provider() 
     total_bl = len(bl_list)
     
     for index, bl in enumerate(bl_list):
@@ -38,40 +57,32 @@ def track_bulk_bl(bl_list, progress_callback=None):
             "carrier_code": carrier_code
         }
         
-        api_data = None
-        # 챗GPT 피드백 버그 4위 반영 준비: 실제 연동 시 구체적 네트워크 예외 처리 공간 세팅
+        result_object = None
         for attempt in range(1, MAX_RETRIES + 1):
             try:
-                # 타임아웃을 안전하게 공급자 엔진에 전달
-                api_data = provider.fetch_data(tracking_request, timeout=API_TIMEOUT)
-                if api_data:
+                result_object = provider.fetch_data(tracking_request, timeout=API_TIMEOUT)
+                if result_object and result_object.status != "Error":
                     break
-            except KeyError as ke:
-                logger.error(f"Data parsing error on BL {bl} (Attempt {attempt}): {str(ke)}")
-                break
             except Exception as e:
-                # [Phase 2 실제 연동 시 requests.exceptions.Timeout 등으로 확장]
-                logger.error(f"Network error on BL {bl} (Attempt {attempt}/{MAX_RETRIES}): {str(e)}")
+                logger.error(f"Network exception on BL {bl} (Attempt {attempt}/{MAX_RETRIES}): {str(e)}")
                 if attempt < MAX_RETRIES:
                     time.sleep(0.5)
                     
-        if api_data:
-            logger.info(f"SUCCESS | BL: {bl} | Carrier: {carrier_code.upper()}")
-            
-            # 🚨 챗GPT가 찾아낸 1순위 치명적 오타 버그 깔끔하게 수술 완료! 🚨
+        if result_object:
+            logger.info(f"TRACKING REPORTED | BL: {bl} | Carrier: {carrier_code.upper()} | Status: {result_object.status}")
             results.append({
-                "B/L Number": bl, 
-                "Carrier": carrier_code.upper(), 
-                "Status": api_data["status"],
-                "POL": api_data["pol"],    # 👈 따옴표 중복 에러 완전 진압!
-                "ETD": api_data["etd"], 
-                "POD": api_data["pod"], 
-                "ETA": api_data["eta"],
-                "Remarks": "Successfully fetched via API"
+                "B/L Number": bl,
+                "Carrier": carrier_code.upper(),
+                "Status": result_object.status,
+                "POL": result_object.pol,
+                "ETD": result_object.etd,
+                "POD": result_object.pod,
+                "ETA": result_object.eta,
+                "Remarks": result_object.remarks
             })
         else:
-            fail_reason = "API Timeout or Carrier Server maintenance."
-            logger.error(f"FINAL CRITICAL FAILURE | BL: {bl} | Reason: {fail_reason}")
+            fail_reason = "API Critical Timeout or Provider Server down."
+            logger.error(f"FINAL SYSTEM CRITICAL FAILURE | BL: {bl} | Reason: {fail_reason}")
             results.append({
                 "B/L Number": bl, "Carrier": carrier_code.upper(), "Status": "Not Found",
                 "POL": "N/A", "ETD": "N/A", "POD": "N/A", "ETA": "N/A", "Remarks": fail_reason
